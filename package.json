@@ -1,0 +1,73 @@
+{
+  "name": "multitwitch",
+  "productName": "MultiTwitch",
+  "version": "1.0.0",
+  "description": "Mehrere Twitch-Streams gleichzeitig schauen – mit deinem eigenen Twitch-Login (Turbo = keine Werbung)",
+  "author": "melv1N-ui",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron build/make-icon.js",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:win": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "multitwitch": {
+    "updateRepo": "melv1N-ui/multitwitch"
+  },
+  "build": {
+    "appId": "local.multitwitch",
+    "productName": "MultiTwitch",
+    "artifactName": "MultiTwitch-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "MultiTwitch"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "MultiTwitch"
+    },
+    "afterPack": "build/after-pack.js"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  },
+  "repository": "github:melv1N-ui/multitwitch"
+}

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://static-cdn.jtvnw.net" />
+  <title>MultiTwitch</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header id="titlebar">
+    <button id="sidebar-btn" class="icon-btn" title="Live-Liste ein/aus (S)"><span data-icon="sidebar"></span></button>
+    <div class="brand">
+      <div class="brand-mark" data-icon="logo"></div>
+      <span>Multi<b>Twitch</b></span>
+    </div>
+
+    <form id="add-form" class="search">
+      <span class="search-icon" data-icon="plus"></span>
+      <input id="channel-input" placeholder="Kanal oder multitwitch-Link …" autocomplete="off" spellcheck="false" />
+      <kbd id="shortcut-hint">⌘K</kbd>
+    </form>
+
+    <div class="actions">
+      <div class="segmented" id="layout-switch">
+        <button data-layout="equal" title="Raster"><span data-icon="grid"></span></button>
+        <button data-layout="focus" title="Fokus"><span data-icon="focus"></span></button>
+        <button data-layout="free" title="Frei – Fenster selbst verschieben und vergrößern"><span data-icon="free"></span></button>
+      </div>
+
+      <div class="dropdown">
+        <button id="sets-btn" class="icon-btn" title="Gespeicherte Sets"><span data-icon="bookmark"></span></button>
+        <div class="menu" id="sets-menu">
+          <div class="menu-title">Gespeicherte Sets</div>
+          <div id="sets-list"></div>
+          <form id="set-form" class="set-form">
+            <input id="set-name" placeholder="Aktuelle Ansicht speichern als …" autocomplete="off" />
+            <button type="submit" title="Speichern"><span data-icon="plus"></span></button>
+          </form>
+        </div>
+      </div>
+
+      <button id="cinema-btn" class="icon-btn" title="Kino-Modus (F)"><span data-icon="cinema"></span></button>
+      <button id="chat-btn" class="icon-btn" title="Chat ein/aus (C)"><span data-icon="chat"></span></button>
+      <button id="settings-btn" class="icon-btn" title="Einstellungen"><span data-icon="settings"></span></button>
+
+      <div class="dropdown">
+        <button id="account-btn" class="account-pill">
+          <span class="avatar" id="avatar">?</span>
+          <span id="account-name">Einloggen</span>
+          <span class="badge" id="turbo-badge">Werbung aktiv</span>
+        </button>
+        <div class="menu" id="account-menu">
+          <div class="menu-head" id="menu-head"></div>
+          <button id="logout-btn" class="danger"><span data-icon="logout"></span>Ausloggen</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="update-banner" hidden>
+    <span>Neue Version <b id="update-version"></b> verfügbar</span>
+    <button id="update-open">Herunterladen</button>
+    <button id="update-close" class="ghost" title="Später"><span data-icon="close"></span></button>
+  </div>
+
+  <main>
+    <aside id="sidebar">
+      <div class="side-head">
+        <span>Live</span>
+        <span class="count" id="live-count"></span>
+        <button id="live-refresh" class="mini-btn" title="Aktualisieren"><span data-icon="reload"></span></button>
+      </div>
+      <div id="live-list"></div>
+    </aside>
+
+    <section id="stage">
+      <div id="empty">
+        <div class="hero-mark" data-icon="logo"></div>
+        <h1>Mehrere Streams. Ein Fenster.</h1>
+        <p>Tippe oben einen oder mehrere Kanäle ein, z. B. <code>shroud ohnepixel</code> – oder füge einen multitwitch-Link ein.</p>
+        <div class="steps">
+          <div class="step" id="step-login">
+            <span class="step-num">1</span>
+            <div><b>Mit Twitch einloggen</b><small>damit dein Turbo-Abo greift</small></div>
+          </div>
+          <div class="step">
+            <span class="step-num">2</span>
+            <div><b>Kanäle hinzufügen</b><small><kbd class="mod">⌘</kbd><kbd>K</kbd> oder links aus der Live-Liste</small></div>
+          </div>
+          <div class="step">
+            <span class="step-num">3</span>
+            <div><b>Zurücklehnen</b><small>Tasten 1–9 wechseln den Ton</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside id="chat">
+      <div class="chat-head">
+        <div id="chat-tabs"></div>
+        <button id="chat-stack-btn" class="mini-btn" title="Alle Chats untereinander"><span data-icon="rows"></span></button>
+      </div>
+      <div id="chat-frames">
+        <div class="chat-empty">Füge einen Stream hinzu, um den Chat zu sehen.</div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Einstellungen -->
+  <div class="modal" id="settings-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Einstellungen</h2>
+        <button class="mini-btn" data-close title="Schließen"><span data-icon="close"></span></button>
+      </div>
+
+      <section class="setting-group">
+        <h3>Twitch-Verbindung <span class="pill" id="api-pill">nicht verbunden</span></h3>
+        <p class="hint">Für die Live-Liste, Zuschauerzahlen und Offline-Erkennung. Einmalig einrichten:</p>
+        <ol class="howto" id="api-howto">
+          <li>Öffne <a href="#" data-link="https://dev.twitch.tv/console/apps/create">dev.twitch.tv → Anwendung registrieren</a> und logge dich ein.</li>
+          <li>Name: z. B. <code>MultiTwitch-deinname</code> · OAuth-Redirect-URL: <code>http://localhost</code> · Kategorie: <i>Application Integration</i> · Client-Typ: <b>Öffentlich</b>.</li>
+          <li>Auf „Erstellen“, dann bei der App auf „Verwalten“ und die <b>Client-ID</b> kopieren.</li>
+        </ol>
+        <div class="row">
+          <input id="client-id" placeholder="Client-ID hier einfügen" autocomplete="off" spellcheck="false" />
+          <button id="api-connect" class="primary">Verbinden</button>
+        </div>
+        <div class="device-code" id="device-code" hidden>
+          Bestätige im geöffneten Fenster den Code <b id="device-code-value"></b>
+          <span class="spinner"></span>
+        </div>
+        <div class="connected" id="api-connected" hidden>
+          <img id="api-avatar" alt="" />
+          <div><b id="api-user"></b><small>verbunden</small></div>
+          <button id="api-disconnect" class="ghost">Trennen</button>
+        </div>
+      </section>
+
+      <section class="setting-group">
+        <h3>Wiedergabe</h3>
+        <label class="toggle">
+          <input type="checkbox" id="opt-quality" />
+          <span class="switch"></span>
+          <div><b>Automatische Qualität</b><small>Große Streams in voller Qualität, kleine in 480p/720p – spart Internet und Leistung</small></div>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="opt-offline" />
+          <span class="switch"></span>
+          <div><b>Offline-Streams ausblenden</b><small>Braucht die Twitch-Verbindung oben</small></div>
+        </label>
+      </section>
+
+      <section class="setting-group">
+        <h3>Tastenkürzel</h3>
+        <div class="keys">
+          <span><kbd class="mod">⌘</kbd><kbd>K</kbd></span><span>Kanal hinzufügen</span>
+          <span><kbd>1</kbd>–<kbd>9</kbd></span><span>Nur diesen Stream hören</span>
+          <span><kbd>0</kbd></span><span>Alle Streams laut</span>
+          <span><kbd>L</kbd></span><span>Layout wechseln</span>
+          <span><kbd>F</kbd></span><span>Kino-Modus</span>
+          <span><kbd>C</kbd></span><span>Chat ein/aus</span>
+          <span><kbd>S</kbd></span><span>Live-Liste ein/aus</span>
+        </div>
+      </section>
+
+      <div class="modal-foot">MultiTwitch <span id="app-version"></span></div>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script src="icons.js"></script>
+  <script src="player-control.js"></script>
+  <script src="renderer.js"></script>
+  <script src="features.js"></script>
+</body>
+</html>

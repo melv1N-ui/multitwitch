@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b48cff"/>
+      <stop offset="1" stop-color="#5b2ee8"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".22"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1a0b4d" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <!-- Grundform nach Apples Icon-Raster (824px mit Rand) -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#shine)"/>
+  </g>
+  <!-- vier Stream-Kacheln -->
+  <rect x="232" y="262" width="262" height="220" rx="44" fill="#fff"/>
+  <rect x="530" y="262" width="262" height="220" rx="44" fill="#fff" opacity=".72"/>
+  <rect x="232" y="542" width="262" height="220" rx="44" fill="#fff" opacity=".72"/>
+  <rect x="530" y="542" width="262" height="220" rx="44" fill="#fff" opacity=".45"/>
+  <!-- Play-Symbol in der Hauptkachel -->
+  <path d="M338 326 L338 418 L414 372 Z" fill="#6a3df5" stroke="#6a3df5" stroke-width="18" stroke-linejoin="round"/>
+</svg>
