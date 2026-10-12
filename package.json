@@ -10,7 +10,7 @@
     "icon": "electron build/make-icon.js",
     "build:mac": "electron-builder --mac --publish never",
     "build:win": "electron-builder --win --publish never",
-    "test": "node --test test/"
+    "test": "node --test \"test/**/*.test.js\""
   },
   "devDependencies": {
     "electron": "^33.2.0",
