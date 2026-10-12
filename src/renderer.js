@@ -35,7 +35,8 @@ const state = {
   chatStacked: load('chatStacked', false), // alle Chats untereinander statt Tabs
   sidebarOpen: load('sidebarOpen', true),
   volumes: load('volumes', {}),            // Kanal -> Lautstärke 0..1
-  opts: load('opts', { autoQuality: true, hideOffline: false }),
+  opts: { autoQuality: true, hideOffline: false, chatFollowsAudio: true, audioFollowsClick: false, notify: true, normalize: true, muteIcon: false, ...load('opts', {}) },
+  recent: load('recent', []),              // zuletzt hinzugefügte Kanäle (für Vorschläge)
   live: {},                                // Kanal -> Live-Infos von der Twitch-API (falls verbunden)
   apiConnected: false,
   cinema: false,
@@ -56,42 +57,10 @@ function load(key, fallback) {
 }
 function save() {
   try {
-    for (const key of ['channels', 'layout', 'focus', 'free', 'chatOpen', 'chatStacked', 'sidebarOpen', 'volumes', 'opts']) {
+    for (const key of ['channels', 'layout', 'focus', 'free', 'chatOpen', 'chatStacked', 'sidebarOpen', 'volumes', 'opts', 'recent']) {
       localStorage.setItem(key, JSON.stringify(state[key]));
     }
   } catch {}
-}
-
-// "https://twitch.tv/Shroud" -> "shroud"
-function cleanName(raw) {
-  const name = raw.trim().replace(/^.*twitch\.tv\//i, '').split(/[/?#]/)[0].toLowerCase();
-  return /^[a-z0-9_]{2,25}$/.test(name) ? name : null;
-}
-
-// Seiten wie multitwitch.tv/a/b/c listen die Kanäle im Pfad auf
-const MULTI_SITES = /^(www\.)?(multitwitch\.tv|multistre\.am|multitwitch\.live|twitchtheater\.tv|kadgar\.net)$/i;
-
-// Text (Namen, Twitch-Links, multitwitch-Links) -> { names, invalid }
-function parseChannels(text) {
-  const names = [];
-  const invalid = [];
-  for (const part of text.split(/[\s,]+/).filter(Boolean)) {
-    let url = null;
-    try {
-      url = new URL(part.includes('://') ? part : `https://${part}`);
-    } catch {}
-    if (url && MULTI_SITES.test(url.hostname)) {
-      url.pathname.split('/').forEach((seg) => {
-        const n = cleanName(seg);
-        if (n && n !== 'live') names.push(n);
-      });
-      continue;
-    }
-    const n = cleanName(part);
-    if (n) names.push(n);
-    else invalid.push(part);
-  }
-  return { names: [...new Set(names)], invalid };
 }
 
 // Fügt Kanäle hinzu, zeigt Hinweise an und gibt die Anzahl neuer Streams zurück
@@ -106,6 +75,7 @@ function addChannels(text) {
     }
     state.channels.push(name);
     addChannel(name);
+    rememberRecent(name);
     added++;
   }
   if (added) {
@@ -115,6 +85,13 @@ function addChannels(text) {
   }
   return added;
 }
+
+function rememberRecent(name) {
+  state.recent = [name, ...state.recent.filter((n) => n !== name)].slice(0, 20);
+}
+
+// Sichtbare Streams in Anzeige-Reihenfolge (ausgeblendete Offline-Streams zählen nicht)
+const visibleChannels = () => state.channels.filter((c) => tiles.has(c) && !isHidden(c));
 
 function toast(text) {
   const el = document.createElement('div');
@@ -157,6 +134,11 @@ function addChannel(name) {
     </div>
     <div class="mute-flag" data-icon="mute"></div>
     <div class="offline-flag">Offline</div>
+    <div class="error-overlay">
+      <b>Stream konnte nicht geladen werden</b>
+      <small>Neuer Versuch in ein paar Sekunden …</small>
+      <button class="retry">Jetzt neu laden</button>
+    </div>
     <div class="handle nw"></div><div class="handle ne"></div>
     <div class="handle sw"></div><div class="handle se"></div>`;
   hydrateIcons(el);
@@ -170,7 +152,7 @@ function addChannel(name) {
   el.prepend(webview);
   stageEl.appendChild(el);
 
-  const tile = { el, webview, muted: false, ready: false, quality: null };
+  const tile = { el, webview, muted: false, ready: false, quality: null, retryTimer: null };
   tiles.set(name, tile);
   bringToFront(name);
 
@@ -178,9 +160,29 @@ function addChannel(name) {
     tile.ready = true;
     webview.setAudioMuted(tile.muted);
     // Lautstärke + Qualität im (neu geladenen) Player setzen
-    setPlayerWant(webview, { volume: volumeOf(name), maxHeight: tile.quality });
+    setPlayerWant(webview, { volume: volumeOf(name), maxHeight: tile.quality, normalize: state.opts.normalize });
   });
   webview.addEventListener('did-finish-load', () => el.classList.add('ready'));
+
+  // Ladefehler (z. B. Internet kurz weg): Hinweis zeigen und nach 8 Sekunden selbst neu versuchen
+  const reloadTile = () => {
+    clearTimeout(tile.retryTimer);
+    el.classList.remove('failed', 'ready');
+    webview.reload();
+  };
+  webview.addEventListener('did-fail-load', (e) => {
+    if (!e.isMainFrame || e.errorCode === -3) return; // -3 = Laden abgebrochen, kein echter Fehler
+    el.classList.add('failed');
+    clearTimeout(tile.retryTimer);
+    tile.retryTimer = setTimeout(reloadTile, 8000);
+  });
+  // Abgestürzter Player: einfach neu starten
+  webview.addEventListener('render-process-gone', () => {
+    toast(`${name} ist abgestürzt – wird neu geladen`);
+    setTimeout(reloadTile, 1000);
+  });
+  el.querySelector('.retry').onclick = reloadTile;
+  tile.reload = reloadTile;
 
   el.querySelector('.mute').onclick = () => setMuted(name, !tile.muted);
   const vol = el.querySelector('.vol');
@@ -200,17 +202,18 @@ function addChannel(name) {
     save();
     render();
   };
-  el.querySelector('.reload').onclick = () => {
-    el.classList.remove('ready');
-    webview.reload();
-  };
+  el.querySelector('.reload').onclick = reloadTile;
   el.querySelector('.remove').onclick = () => removeChannel(name);
   enableDrag(el.querySelector('.chip'), name);
   enableResize(el, name);
   el.querySelector('.chip').addEventListener('dblclick', () => state.layout === 'free' && toggleMaximize(name));
-  // Angeklicktes Fenster nach vorne holen
-  el.addEventListener('pointerdown', () => bringToFront(name), true);
-  webview.addEventListener('focus', () => bringToFront(name));
+  // Angeklicktes Fenster nach vorne holen (und auf Wunsch dessen Ton einschalten)
+  const onActivate = () => {
+    bringToFront(name);
+    if (state.opts.audioFollowsClick && tile.muted) solo(name);
+  };
+  el.addEventListener('pointerdown', (e) => !e.target.closest('.tools') && onActivate(), true);
+  webview.addEventListener('focus', onActivate);
 
   // Ab dem zweiten Stream neue Streams stumm starten, damit es kein Tonchaos gibt
   setMuted(name, tiles.size > 1);
@@ -220,6 +223,7 @@ function removeChannel(name) {
   const tile = tiles.get(name);
   if (!tile) return;
   const wasAudible = !tile.muted;
+  clearTimeout(tile.retryTimer);
   tile.el.remove();
   tiles.delete(name);
   chatViews.get(name)?.remove();
@@ -247,6 +251,11 @@ function setMuted(name, muted) {
   btn.innerHTML = ICONS[muted ? 'mute' : 'volume'];
   btn.classList.toggle('on', !muted);
   tile.el.classList.toggle('audible', !muted);
+  // Chat folgt dem Stream, den man gerade hört
+  if (!muted && state.opts.chatFollowsAudio && state.chatChannel !== name && typeof render === 'function' && tiles.size > 1) {
+    state.chatChannel = name;
+    renderChat(visibleChannels());
+  }
   // Ton an bei Lautstärke 0 ergibt keinen Sinn -> auf 50 % stellen
   if (!muted && volumeOf(name) === 0) {
     tile.el.querySelector('.vol').value = 50;
@@ -318,55 +327,8 @@ function enableDrag(handle, name) {
 
 // ---------- Layout ----------
 
-const RATIO = 16 / 9;
 const MIN_W = 220; // kleinste Fensterbreite im freien Layout
 const SNAP = 10;   // so nah (px) muss man an eine Kante, damit es einrastet
-const GAP = 10;
-
-// Raster: probiert alle Spaltenanzahlen und nimmt die mit den größten Kacheln.
-function equalLayout(names, W, H) {
-  const n = names.length;
-  let best = { w: 0 };
-  for (let cols = 1; cols <= n; cols++) {
-    const rows = Math.ceil(n / cols);
-    const w = Math.min((W - GAP * (cols - 1)) / cols, ((H - GAP * (rows - 1)) / rows) * RATIO);
-    if (w > best.w) best = { w, cols, rows };
-  }
-  const { w, cols, rows } = best;
-  const h = w / RATIO;
-  const offY = (H - (rows * h + GAP * (rows - 1))) / 2;
-  return names.map((name, i) => {
-    const row = Math.floor(i / cols);
-    const inRow = Math.min(cols, n - row * cols); // letzte Reihe zentrieren
-    const offX = (W - (inRow * w + GAP * (inRow - 1))) / 2;
-    return { name, x: offX + (i % cols) * (w + GAP), y: offY + row * (h + GAP), w, h };
-  });
-}
-
-// Fokus: ein Stream groß links, der Rest klein rechts untereinander.
-function focusLayout(names, W, H) {
-  const main = names.includes(state.focus) ? state.focus : names[0];
-  const others = names.filter((n) => n !== main);
-  if (others.length === 0) return equalLayout(names, W, H);
-
-  const sideW = Math.min(W * 0.24, ((H - GAP * (others.length - 1)) / others.length) * RATIO);
-  const sideH = sideW / RATIO;
-  const mainW = Math.min(W - sideW - GAP, H * RATIO);
-  const mainH = mainW / RATIO;
-  const offX = (W - (mainW + GAP + sideW)) / 2;
-  const sideTotalH = others.length * sideH + GAP * (others.length - 1);
-
-  return [
-    { name: main, x: offX, y: (H - mainH) / 2, w: mainW, h: mainH },
-    ...others.map((name, i) => ({
-      name,
-      x: offX + mainW + GAP,
-      y: (H - sideTotalH) / 2 + i * (sideH + GAP),
-      w: sideW,
-      h: sideH,
-    })),
-  ];
-}
 
 // ---------- Freies Layout: Fenster selbst verschieben und vergrößern ----------
 
@@ -549,14 +511,6 @@ function enableResize(el, name) {
   });
 }
 
-// Welche Qualität passt zur Größe auf dem Bildschirm? (in Bildschirmpunkten)
-function qualityFor(h) {
-  if (!state.opts.autoQuality) return 'auto';
-  if (h >= 500) return 4320; // groß: beste verfügbare Qualität
-  if (h >= 280) return 720;
-  return 480;
-}
-
 const isHidden = (name) => state.opts.hideOffline && state.apiConnected && state.live[name] === null;
 
 function render() {
@@ -570,6 +524,7 @@ function render() {
   chatBtn.classList.toggle('active', state.chatOpen);
   chatStackBtn.classList.toggle('active', state.chatStacked);
   document.body.classList.toggle('sidebar-open', state.sidebarOpen && !state.cinema);
+  document.body.classList.toggle('show-mute-icon', state.opts.muteIcon);
   $('sidebar-btn').classList.toggle('active', state.sidebarOpen);
 
   const W = stageEl.clientWidth;
@@ -577,7 +532,7 @@ function render() {
   stageEl.classList.toggle('free', state.layout === 'free');
   const boxes =
     state.layout === 'free' ? freeLayout(names, W, H)
-    : state.layout === 'focus' ? focusLayout(names, W, H)
+    : state.layout === 'focus' ? focusLayout(names, W, H, state.focus)
     : equalLayout(names, W, H);
 
   // Nur Position/Größe ändern – die Webviews werden NICHT neu erstellt (kein Neuladen)
@@ -585,7 +540,7 @@ function render() {
     const tile = tiles.get(b.name);
     Object.assign(tile.el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
     tile.el.querySelector('.num').textContent = i < 9 ? i + 1 : '';
-    const q = qualityFor(b.h);
+    const q = qualityFor(b.h, state.opts.autoQuality);
     if (q !== tile.quality) {
       tile.quality = q;
       if (tile.ready) setPlayerWant(tile.webview, { maxHeight: q });
@@ -682,11 +637,7 @@ window.twitch.onLoginChanged(async () => {
 });
 
 function reloadAll() {
-  for (const t of tiles.values()) {
-    if (!t.ready) continue;
-    t.el.classList.remove('ready');
-    t.webview.reload();
-  }
+  for (const t of tiles.values()) if (t.ready) t.reload();
   for (const wv of chatViews.values()) wv.reload();
 }
 
@@ -700,11 +651,7 @@ $('add-form').addEventListener('submit', (e) => {
 });
 
 document.querySelectorAll('#layout-switch button').forEach((b) => {
-  b.onclick = () => {
-    state.layout = b.dataset.layout;
-    save();
-    render();
-  };
+  b.onclick = () => setLayout(b.dataset.layout);
 });
 
 function toggleChat() {
@@ -714,36 +661,55 @@ function toggleChat() {
 }
 chatBtn.onclick = toggleChat;
 
-// Tastenkürzel (funktionieren, solange der Fokus nicht in einem Stream/Chat liegt)
+function setLayout(layout) {
+  state.layout = layout;
+  save();
+  render();
+}
+
+function focusSearch() {
+  input.focus();
+  input.select();
+}
+
+// Einfache Tastenkürzel ohne Cmd/Strg. Kommen entweder direkt von der Seite
+// oder (nach einem Klick in einen Stream) über den Hauptprozess – siehe main.js.
+function handleKey(key) {
+  const k = key.toLowerCase();
+  if (/^[1-9]$/.test(k)) {
+    const name = visibleChannels()[Number(k) - 1];
+    if (name) solo(name);
+  } else if (k === '0') {
+    for (const name of tiles.keys()) setMuted(name, false);
+  } else if (k === 'c') {
+    toggleChat();
+  } else if (k === 'l') {
+    const order = ['equal', 'focus', 'free'];
+    setLayout(order[(order.indexOf(state.layout) + 1) % order.length]);
+  } else {
+    return handleFeatureKey(key); // F, S, Esc – siehe features.js
+  }
+  return true;
+}
+
 document.addEventListener('keydown', (e) => {
   const mod = isMac ? e.metaKey : e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'k') {
     e.preventDefault();
-    input.focus();
-    input.select();
-    return;
+    return focusSearch();
   }
+  // Auch über das Menü belegt – hier zusätzlich, falls das Menü (Windows) ausgeblendet ist.
+  // Doppelt auslösen schadet nicht, weil diese Aktionen nur einen Zustand setzen.
+  if (mod && ['1', '2', '3'].includes(e.key)) return setLayout(['equal', 'focus', 'free'][e.key - 1]);
+  if (mod && e.key === ',') return openSettings();
   // Beim Tippen in Eingabefeldern keine Kürzel auslösen
   if (e.target.closest('input, textarea')) {
     if (e.key === 'Escape') e.target.blur();
     return;
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (/^[1-9]$/.test(e.key)) {
-    const name = state.channels[Number(e.key) - 1];
-    if (name) solo(name);
-  } else if (e.key === '0') {
-    for (const name of tiles.keys()) setMuted(name, false);
-  } else if (e.key.toLowerCase() === 'c') {
-    toggleChat();
-  } else if (e.key.toLowerCase() === 'l') {
-    const order = ['equal', 'focus', 'free'];
-    state.layout = order[(order.indexOf(state.layout) + 1) % order.length];
-    save();
-    render();
-  } else {
-    handleFeatureKey(e); // F, S, Esc – siehe features.js
-  }
+  if (handleKey(e.key)) e.preventDefault();
 });
+window.twitch.onShortcut(handleKey);
 
 

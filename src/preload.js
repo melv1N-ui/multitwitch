@@ -18,9 +18,14 @@ contextBridge.exposeInMainWorld('twitch', {
     disconnect: () => ipcRenderer.invoke('api:disconnect'),
     followedLive: () => ipcRenderer.invoke('api:followed-live'),
     streams: (logins) => ipcRenderer.invoke('api:streams', logins),
+    search: (query) => ipcRenderer.invoke('api:search', query),
     onConnected: on('api:connected'),
     onError: on('api:error'),
   },
+  // Menü & Tastenkürzel aus den Streams
+  onMenu: on('menu'),
+  onShortcut: on('shortcut'),
+  focusApp: () => ipcRenderer.invoke('focus-app'),
   // Fenster
   pip: (channel) => ipcRenderer.invoke('pip', channel),
   onPipClosed: on('pip-closed'),

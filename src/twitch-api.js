@@ -158,4 +158,19 @@ async function streams(logins) {
   return out;
 }
 
-module.exports = { status, setClientId, disconnect, startDeviceFlow, waitForApproval, followedLive, streams };
+// Kanalsuche für die Vorschläge beim Eintippen
+async function search(query) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return [];
+  const { data } = await helix(`search/channels?first=8&query=${encodeURIComponent(q)}`);
+  return data.map((c) => ({
+    login: c.broadcaster_login,
+    name: c.display_name,
+    live: c.is_live,
+    game: c.game_name,
+    title: c.title,
+    avatar: c.thumbnail_url,
+  }));
+}
+
+module.exports = { status, setClientId, disconnect, startDeviceFlow, waitForApproval, followedLive, streams, search };

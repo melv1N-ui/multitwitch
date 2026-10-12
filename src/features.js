@@ -3,14 +3,6 @@
 
 const api = window.twitch.api;
 
-const fmtViewers = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace('.', ',')}K` : String(n));
-
-function fmtUptime(iso) {
-  const min = Math.floor((Date.now() - new Date(iso)) / 60000);
-  const h = Math.floor(min / 60);
-  return h ? `${h} Std. ${min % 60} Min.` : `${min} Min.`;
-}
-
 // ---------- Live-Infos auf den Streams (Zuschauer, offline) ----------
 
 function renderLiveInfo() {
@@ -63,6 +55,7 @@ async function refreshFollowed() {
   $('live-refresh').classList.add('spinning');
   try {
     const list = await api.followedLive();
+    notifyNewLive(list);
     $('live-count').textContent = list.length;
     if (!list.length) return renderSidebarMessage('Gerade ist niemand live, dem du folgst.');
     liveListEl.innerHTML = '';
@@ -122,6 +115,143 @@ setInterval(() => {
   refreshFollowed();
   refreshLiveInfo();
 }, 60000);
+
+// ---------- Benachrichtigung, wenn jemand live geht ----------
+
+let knownLive = null; // beim ersten Laden nur merken, nicht benachrichtigen
+
+function notifyNewLive(list) {
+  followedCache = list;
+  const now = new Set(list.map((s) => s.login));
+  if (knownLive && state.opts.notify) {
+    for (const s of list) {
+      if (knownLive.has(s.login) || tiles.has(s.login)) continue;
+      const n = new Notification(`${s.name} ist jetzt live`, {
+        body: `${s.game || 'Live'} – ${s.title}`.slice(0, 140),
+        icon: s.avatar || undefined,
+        silent: false,
+      });
+      // Klick auf die Benachrichtigung: App nach vorne holen und Stream hinzufügen
+      n.onclick = () => {
+        window.twitch.focusApp();
+        if (!tiles.has(s.login)) addChannels(s.login);
+      };
+    }
+  }
+  knownLive = now;
+}
+
+// ---------- Vorschläge beim Eintippen ----------
+
+const suggestEl = document.createElement('div');
+suggestEl.id = 'suggestions';
+suggestEl.hidden = true;
+$('add-form').appendChild(suggestEl);
+let suggestions = [];
+let activeSuggestion = -1;
+let searchTimer;
+let searchSeq = 0;
+let followedCache = [];
+
+function hideSuggestions() {
+  suggestEl.hidden = true;
+  activeSuggestion = -1;
+}
+
+function showSuggestions(items, heading) {
+  suggestions = items;
+  activeSuggestion = -1;
+  if (!items.length) return hideSuggestions();
+  suggestEl.innerHTML = heading ? `<div class="suggest-head">${heading}</div>` : '';
+  items.forEach((it, i) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'suggest-item';
+    row.innerHTML = `<span class="suggest-avatar"></span><span class="suggest-text"><b></b><small></small></span><span class="suggest-state"></span>`;
+    const av = row.querySelector('.suggest-avatar');
+    if (it.avatar) av.innerHTML = `<img alt="" src="${encodeURI(it.avatar)}" />`;
+    else av.textContent = it.login[0];
+    row.querySelector('b').textContent = it.name || it.login;
+    row.querySelector('small').textContent = it.live ? it.game || 'Live' : it.note || 'Offline';
+    row.querySelector('.suggest-state').textContent = tiles.has(it.login) ? 'läuft' : it.live ? 'LIVE' : '';
+    row.classList.toggle('is-live', Boolean(it.live));
+    row.addEventListener('mousedown', (e) => e.preventDefault()); // Fokus im Suchfeld behalten
+    row.onclick = () => pickSuggestion(i);
+    suggestEl.appendChild(row);
+  });
+  suggestEl.hidden = false;
+}
+
+function pickSuggestion(i) {
+  const it = suggestions[i];
+  if (!it) return;
+  hideSuggestions();
+  input.value = '';
+  if (tiles.has(it.login)) return toast(`${it.name || it.login} läuft schon`);
+  addChannels(it.login);
+  input.blur();
+}
+
+function highlight(i) {
+  const rows = suggestEl.querySelectorAll('.suggest-item');
+  activeSuggestion = (i + rows.length) % rows.length;
+  rows.forEach((r, idx) => r.classList.toggle('active', idx === activeSuggestion));
+}
+
+// Ohne Eingabe: zuletzt geschaut + gerade live. Mit Eingabe: Twitch-Suche (falls verbunden)
+async function updateSuggestions() {
+  const q = input.value.trim().toLowerCase();
+  const seq = ++searchSeq;
+  if (!q) {
+    const live = followedCache.filter((s) => !tiles.has(s.login)).slice(0, 5);
+    const recent = state.recent
+      .filter((n) => !tiles.has(n) && !live.some((s) => s.login === n))
+      .slice(0, 5)
+      .map((n) => ({ login: n, name: n, live: state.live[n] ? true : false, note: 'Zuletzt geschaut' }));
+    return showSuggestions([...live, ...recent], live.length || recent.length ? 'Vorschläge' : '');
+  }
+  if (/[\s,/]/.test(q)) return hideSuggestions(); // mehrere Kanäle oder Link -> keine Vorschläge
+  const local = [
+    ...followedCache.filter((s) => s.login.includes(q)),
+    ...state.recent.filter((n) => n.includes(q)).map((n) => ({ login: n, name: n, note: 'Zuletzt geschaut' })),
+  ];
+  if (!state.apiConnected) return showSuggestions(dedupe(local).slice(0, 8));
+  try {
+    const found = await api.search(q);
+    if (seq !== searchSeq) return; // inzwischen weitergetippt
+    // Live-Kanäle zuerst
+    found.sort((a, b) => Number(b.live) - Number(a.live));
+    showSuggestions(dedupe([...local, ...found]).slice(0, 8));
+  } catch (err) {
+    handleApiError(err);
+    showSuggestions(dedupe(local).slice(0, 8));
+  }
+}
+
+const dedupe = (list) => {
+  const seen = new Set();
+  return list.filter((s) => !seen.has(s.login) && seen.add(s.login));
+};
+
+input.addEventListener('focus', updateSuggestions);
+input.addEventListener('blur', () => setTimeout(hideSuggestions, 100));
+input.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(updateSuggestions, 200);
+});
+input.addEventListener('keydown', (e) => {
+  if (suggestEl.hidden) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    highlight(activeSuggestion + 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    highlight(activeSuggestion - 1);
+  } else if (e.key === 'Enter' && activeSuggestion >= 0) {
+    e.preventDefault();
+    pickSuggestion(activeSuggestion);
+  }
+});
 
 // ---------- Sets: ganze Zusammenstellungen speichern und laden ----------
 
@@ -295,17 +425,36 @@ $('api-disconnect').onclick = async () => {
   render();
 };
 
-function bindOption(id, key) {
+function bindOption(id, key, onChange) {
   const box = $(id);
   box.checked = Boolean(state.opts[key]);
   box.onchange = () => {
     state.opts[key] = box.checked;
     save();
     render();
+    onChange?.(box.checked);
   };
 }
 bindOption('opt-quality', 'autoQuality');
 bindOption('opt-offline', 'hideOffline');
+bindOption('opt-chat-follows', 'chatFollowsAudio');
+bindOption('opt-audio-click', 'audioFollowsClick');
+bindOption('opt-notify', 'notify');
+bindOption('opt-mute-icon', 'muteIcon');
+// Lautstärke angleichen: sofort an alle laufenden Player weitergeben
+function applyNormalize(on) {
+  for (const t of tiles.values()) if (t.ready) setPlayerWant(t.webview, { normalize: on });
+}
+bindOption('opt-normalize', 'normalize', applyNormalize);
+
+// Per Taste N an/aus
+function setNormalize(on) {
+  state.opts.normalize = on;
+  $('opt-normalize').checked = on;
+  save();
+  applyNormalize(on);
+  toast(on ? 'Lautstärke angleichen: an' : 'Lautstärke angleichen: aus – Originalton');
+}
 
 window.twitch.version().then((v) => ($('app-version').textContent = `v${v}`));
 
@@ -326,16 +475,37 @@ window.twitch.onFullscreenChanged((full) => {
 });
 
 // Tastenkürzel, die renderer.js nicht selbst behandelt
-function handleFeatureKey(e) {
-  const key = e.key.toLowerCase();
-  if (key === 'f') setCinema(!state.cinema);
-  else if (key === 's') toggleSidebar();
-  else if (e.key === 'Escape') {
+function handleFeatureKey(key) {
+  const k = key.toLowerCase();
+  if (k === 'f') setCinema(!state.cinema);
+  else if (k === 's') toggleSidebar();
+  else if (k === 'n') setNormalize(!state.opts.normalize);
+  else if (k === 'escape') {
     if (!modal.hidden) closeSettings();
     else if (state.cinema) setCinema(false);
     closeMenus();
-  }
+    hideSuggestions();
+  } else return false;
+  return true;
 }
+
+// ---------- Befehle aus dem App-Menü ----------
+
+window.twitch.onMenu((cmd) => {
+  if (cmd.startsWith('layout:')) return setLayout(cmd.slice(7));
+  switch (cmd) {
+    case 'add': return focusSearch();
+    case 'settings': return openSettings();
+    case 'sidebar': return toggleSidebar();
+    case 'chat': return toggleChat();
+    case 'cinema': return setCinema(!state.cinema);
+    case 'reload-all': return reloadAll();
+    case 'unmute-all': return tiles.forEach((_, n) => setMuted(n, false));
+    case 'mute-all': return tiles.forEach((_, n) => setMuted(n, true));
+    case 'clear':
+      if (tiles.size && confirm('Alle Streams entfernen?')) [...tiles.keys()].forEach(removeChannel);
+  }
+});
 
 // ---------- Links einfügen: Cmd/Strg+V irgendwo in der App ----------
 

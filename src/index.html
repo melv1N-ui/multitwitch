@@ -140,6 +140,11 @@
       <section class="setting-group">
         <h3>Wiedergabe</h3>
         <label class="toggle">
+          <input type="checkbox" id="opt-normalize" />
+          <span class="switch"></span>
+          <div><b>Lautstärke angleichen</b><small>Leise Streams werden lauter, laute leiser – und plötzliche Schreie oder Alerts werden abgefangen. Deine Regler pro Stream wirken zusätzlich.</small></div>
+        </label>
+        <label class="toggle">
           <input type="checkbox" id="opt-quality" />
           <span class="switch"></span>
           <div><b>Automatische Qualität</b><small>Große Streams in voller Qualität, kleine in 480p/720p – spart Internet und Leistung</small></div>
@@ -149,19 +154,45 @@
           <span class="switch"></span>
           <div><b>Offline-Streams ausblenden</b><small>Braucht die Twitch-Verbindung oben</small></div>
         </label>
+        <label class="toggle">
+          <input type="checkbox" id="opt-chat-follows" />
+          <span class="switch"></span>
+          <div><b>Chat folgt dem Ton</b><small>Wechselst du den hörbaren Stream, springt der Chat mit</small></div>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="opt-audio-click" />
+          <span class="switch"></span>
+          <div><b>Ton folgt dem Klick</b><small>Ein Klick in einen Stream schaltet dessen Ton ein (und die anderen stumm)</small></div>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="opt-mute-icon" />
+          <span class="switch"></span>
+          <div><b>Stumm-Symbol auf Streams</b><small>Kleines Lautsprecher-Symbol oben links auf stummen Streams</small></div>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="opt-notify" />
+          <span class="switch"></span>
+          <div><b>Benachrichtigen, wenn jemand live geht</b><small>Für Kanäle, denen du folgst – braucht die Twitch-Verbindung</small></div>
+        </label>
       </section>
 
       <section class="setting-group">
         <h3>Tastenkürzel</h3>
         <div class="keys">
-          <span><kbd class="mod">⌘</kbd><kbd>K</kbd></span><span>Kanal hinzufügen</span>
+          <span><kbd class="mod">⌘</kbd><kbd>K</kbd></span><span>Kanal hinzufügen (mit Vorschlägen)</span>
           <span><kbd>1</kbd>–<kbd>9</kbd></span><span>Nur diesen Stream hören</span>
           <span><kbd>0</kbd></span><span>Alle Streams laut</span>
           <span><kbd>L</kbd></span><span>Layout wechseln</span>
           <span><kbd>F</kbd></span><span>Kino-Modus</span>
           <span><kbd>C</kbd></span><span>Chat ein/aus</span>
           <span><kbd>S</kbd></span><span>Live-Liste ein/aus</span>
+          <span><kbd>N</kbd></span><span>Lautstärke angleichen an/aus</span>
+          <span><kbd>Esc</kbd></span><span>Kino-Modus / Fenster schließen</span>
+          <span><kbd class="mod">⌘</kbd><kbd>1</kbd>–<kbd>3</kbd></span><span>Raster / Fokus / Frei</span>
+          <span><kbd class="mod">⌘</kbd><kbd>R</kbd></span><span>Alle Streams neu laden</span>
+          <span><kbd class="mod">⌘</kbd><kbd>,</kbd></span><span>Einstellungen</span>
         </div>
+        <p class="hint small">Die Tasten ohne <kbd class="mod">⌘</kbd> funktionieren auch, nachdem du in einen Stream geklickt hast – nur nicht beim Tippen im Chat.</p>
       </section>
 
       <div class="modal-foot">MultiTwitch <span id="app-version"></span></div>
@@ -170,6 +201,7 @@
 
   <div id="toasts"></div>
 
+  <script src="lib.js"></script>
   <script src="icons.js"></script>
   <script src="player-control.js"></script>
   <script src="renderer.js"></script>

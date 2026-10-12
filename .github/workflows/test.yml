@@ -1,0 +1,21 @@
+# Führt bei jedem Hochladen die automatischen Tests aus.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Syntax aller Skripte prüfen
+        run: for f in src/*.js build/*.js; do node --check "$f"; done

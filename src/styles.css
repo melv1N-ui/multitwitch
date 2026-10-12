@@ -343,6 +343,8 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 .mute-flag svg { width: 14px; height: 14px; }
 .tile.audible .mute-flag, .tile:hover .mute-flag { opacity: 0; }
+/* Stumm-Symbol nur, wenn in den Einstellungen eingeschaltet */
+body:not(.show-mute-icon) .mute-flag { display: none; }
 
 /* Freies Layout: Ecken zum Vergrößern/Verkleinern */
 .handle { display: none; position: absolute; width: 18px; height: 18px; z-index: 4; }
@@ -793,3 +795,79 @@ button.ghost:hover { color: var(--text); background: var(--surface); }
 .cinema .tile { border-radius: 0; box-shadow: none; }
 .cinema .tile.audible { box-shadow: 0 0 0 2px var(--accent); }
 body.cinema { background: #000; }
+
+/* ================= Version 1.1 ================= */
+
+/* Suchvorschläge */
+.search { position: relative; }
+#suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(24, 24, 32, 0.97);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  z-index: 30;
+  animation: pop .15s var(--ease);
+}
+#suggestions[hidden] { display: none; }
+.suggest-head { padding: 4px 8px 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.suggest-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.suggest-item:hover, .suggest-item.active { background: var(--surface-hover); }
+.suggest-avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+.suggest-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.is-live .suggest-avatar { box-shadow: 0 0 0 2px #18181f, 0 0 0 3.5px var(--danger); }
+.suggest-text { flex: 1; min-width: 0; }
+.suggest-text b, .suggest-text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-text small { color: var(--muted); font-size: 12px; }
+.suggest-state { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; color: var(--muted); }
+.is-live .suggest-state { color: var(--danger); }
+
+/* Fehler beim Laden eines Streams */
+.error-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  text-align: center;
+  background: #101017;
+  z-index: 2;
+}
+.error-overlay small { color: var(--muted); }
+.error-overlay .retry { margin-top: 8px; border: none; border-radius: 8px; padding: 6px 12px; background: var(--surface-hover); cursor: pointer; }
+.error-overlay .retry:hover { background: var(--accent); }
+.tile.failed .error-overlay { display: flex; }
+.tile.failed .loader { display: none; }
+
+.hint.small { margin: 12px 0 0; font-size: 12px; }
+.hint kbd { padding: 1px 5px; }

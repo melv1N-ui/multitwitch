@@ -1,6 +1,15 @@
-// Hauptprozess: Fenster, Twitch-Login, Twitch-API, Bild-im-Bild, Vollbild und Update-Check.
-const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
+// Hauptprozess: Fenster, Menü, Twitch-Login, Twitch-API, Bild-im-Bild, Vollbild und Update-Check.
+const { app, BrowserWindow, Menu, ipcMain, screen, session, shell } = require('electron');
+const fs = require('fs');
 const path = require('path');
+// Test-Profil: MULTITWITCH_PROFILE=name startet mit komplett getrennten Daten (Login, Einstellungen, Streams)
+if (process.env.MULTITWITCH_PROFILE) {
+  app.setPath('userData', path.join(app.getPath('appData'), `MultiTwitch-${process.env.MULTITWITCH_PROFILE}`));
+}
+
+// Streams und Ton-Angleichung dürfen ohne vorherigen Klick abspielen
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 const api = require('./twitch-api');
 const pkg = require('../package.json');
 
@@ -16,10 +25,57 @@ const chromeUA = () =>
 let mainWindow;
 const pipWindows = new Map(); // Kanal -> Bild-im-Bild-Fenster
 
+// Nur eine MultiTwitch-Instanz: ein zweiter Start holt das vorhandene Fenster nach vorne
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+app.on('second-instance', () => {
+  if (!mainWindow) return createMainWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
+
+// ---------- Fenstergröße und -position merken ----------
+
+const windowStateFile = () => path.join(app.getPath('userData'), 'window.json');
+
+function loadWindowState() {
+  try {
+    const st = JSON.parse(fs.readFileSync(windowStateFile(), 'utf8'));
+    // Nur übernehmen, wenn das Fenster noch auf einem angeschlossenen Bildschirm liegt
+    const area = screen.getDisplayMatching(st).workArea;
+    const visible = st.x < area.x + area.width - 100 && st.x + st.width > area.x + 100 && st.y >= area.y - 20 && st.y < area.y + area.height - 100;
+    return visible ? st : { width: st.width, height: st.height };
+  } catch {
+    return { width: 1400, height: 850 };
+  }
+}
+
+function trackWindowState(win) {
+  let timer;
+  const store = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (win.isDestroyed() || win.isFullScreen() || win.isMinimized()) return;
+      const st = { ...win.getNormalBounds(), maximized: win.isMaximized() };
+      try {
+        fs.writeFileSync(windowStateFile(), JSON.stringify(st));
+      } catch {}
+    }, 400);
+  };
+  win.on('resize', store);
+  win.on('move', store);
+  win.on('maximize', store);
+  win.on('unmaximize', store);
+}
+
 function createMainWindow() {
+  const st = loadWindowState();
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 850,
+    x: st.x,
+    y: st.y,
+    width: st.width,
+    height: st.height,
+    show: false,
     minWidth: 800,
     minHeight: 500,
     backgroundColor: '#0b0b10',
@@ -38,6 +94,9 @@ function createMainWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  if (st.maximized) mainWindow.maximize();
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  trackWindowState(mainWindow);
 
   // Vollbild verlassen (z. B. per Esc oder grünem Knopf) -> Oberfläche Bescheid geben
   mainWindow.on('leave-full-screen', () => mainWindow.webContents.send('fullscreen-changed', false));
@@ -130,9 +189,129 @@ async function checkForUpdate() {
   }
 }
 
+// ---------- Menü (oben in der Mac-Menüleiste, unter Windows über die Tastenkürzel) ----------
+
+const send = (cmd) => () => mainWindow?.webContents.send('menu', cmd);
+
+function buildMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    ...(isMac
+      ? [{
+          label: 'MultiTwitch',
+          submenu: [
+            { role: 'about', label: 'Über MultiTwitch' },
+            { type: 'separator' },
+            { label: 'Einstellungen …', accelerator: 'Cmd+,', click: send('settings') },
+            { type: 'separator' },
+            { role: 'hide', label: 'MultiTwitch ausblenden' },
+            { role: 'hideOthers', label: 'Andere ausblenden' },
+            { role: 'unhide', label: 'Alle einblenden' },
+            { type: 'separator' },
+            { role: 'quit', label: 'MultiTwitch beenden' },
+          ],
+        }]
+      : []),
+    {
+      label: 'Streams',
+      submenu: [
+        { label: 'Kanal hinzufügen …', accelerator: 'CmdOrCtrl+K', click: send('add') },
+        { label: 'Alle Streams neu laden', accelerator: 'CmdOrCtrl+R', click: send('reload-all') },
+        { type: 'separator' },
+        { label: 'Alle Streams laut', click: send('unmute-all') },
+        { label: 'Alle Streams stumm', click: send('mute-all') },
+        { type: 'separator' },
+        { label: 'Alle Streams entfernen', click: send('clear') },
+        ...(!isMac ? [{ type: 'separator' }, { label: 'Einstellungen …', accelerator: 'Ctrl+,', click: send('settings') }] : []),
+      ],
+    },
+    { role: 'editMenu', label: 'Bearbeiten' },
+    {
+      label: 'Ansicht',
+      submenu: [
+        { label: 'Raster', accelerator: 'CmdOrCtrl+1', click: send('layout:equal') },
+        { label: 'Fokus', accelerator: 'CmdOrCtrl+2', click: send('layout:focus') },
+        { label: 'Frei', accelerator: 'CmdOrCtrl+3', click: send('layout:free') },
+        { type: 'separator' },
+        { label: 'Live-Liste ein/aus', accelerator: 'CmdOrCtrl+Shift+S', click: send('sidebar') },
+        { label: 'Chat ein/aus', accelerator: 'CmdOrCtrl+Shift+C', click: send('chat') },
+        { label: 'Kino-Modus', accelerator: 'CmdOrCtrl+Shift+F', click: send('cinema') },
+        { type: 'separator' },
+        { role: 'resetZoom', label: 'Originalgröße' },
+        { role: 'zoomIn', label: 'Vergrößern' },
+        { role: 'zoomOut', label: 'Verkleinern' },
+      ],
+    },
+    { role: 'windowMenu', label: 'Fenster' },
+    {
+      label: 'Hilfe',
+      submenu: [
+        { label: 'Projektseite auf GitHub', click: () => shell.openExternal(`https://github.com/${pkg.multitwitch.updateRepo}`) },
+        { label: 'Problem melden …', click: () => shell.openExternal(`https://github.com/${pkg.multitwitch.updateRepo}/issues/new`) },
+        { type: 'separator' },
+        { role: 'toggleDevTools', label: 'Entwicklertools' },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ---------- Sicherheit & Tastenkürzel für die eingebetteten Twitch-Seiten ----------
+
+const isTwitchUrl = (url) => {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && (u.hostname === 'twitch.tv' || u.hostname.endsWith('.twitch.tv'));
+  } catch {
+    return false;
+  }
+};
+
+// Tasten, die auch funktionieren sollen, wenn man vorher in einen Stream geklickt hat
+const FORWARDED_KEYS = new Set(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'f', 'c', 'l', 's', 'n', 'escape']);
+
+function secureContents(contents) {
+  // Eingebettete Seiten dürfen nur Twitch laden – ohne Zugriff auf die App
+  contents.on('will-attach-webview', (e, prefs, params) => {
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.contextIsolation = true;
+    if (!isTwitchUrl(params.src)) e.preventDefault();
+  });
+
+  // Links öffnen im normalen Browser statt in der App
+  contents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  if (contents.getType() !== 'webview') return;
+
+  // Ein Stream/Chat darf nicht auf fremde Seiten wegnavigieren
+  contents.on('will-navigate', (e, url) => {
+    if (!isTwitchUrl(url)) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  // Tastenkürzel aus den Playern (nicht aus dem Chat, da wird getippt) an die App weiterreichen
+  contents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown' || input.meta || input.control || input.alt) return;
+    if (!contents.getURL().startsWith('https://player.twitch.tv/')) return;
+    const key = input.key.toLowerCase();
+    if (!FORWARDED_KEYS.has(key)) return;
+    const host = contents.hostWebContents;
+    if (!host || host !== mainWindow?.webContents) return;
+    e.preventDefault();
+    host.send('shortcut', input.key);
+  });
+}
+
 // ---------- Start ----------
 
 app.whenReady().then(() => {
+  if (!gotLock) return;
   app.userAgentFallback = chromeUA();
   session.fromPartition(PARTITION).setUserAgent(chromeUA());
 
@@ -175,6 +354,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('api:followed-live', () => api.followedLive());
   ipcMain.handle('api:streams', (_e, logins) => api.streams(logins));
+  ipcMain.handle('api:search', (_e, query) => api.search(query));
 
   // Fenster-Funktionen
   ipcMain.handle('pip', (_e, channel) => openPip(channel));
@@ -183,14 +363,21 @@ app.whenReady().then(() => {
   ipcMain.handle('version', () => app.getVersion());
   ipcMain.handle('check-update', () => checkForUpdate());
 
-  // Links (z. B. aus dem Chat) im normalen Browser öffnen statt in der App.
-  app.on('web-contents-created', (_e, contents) => {
-    contents.setWindowOpenHandler(({ url }) => {
-      if (url.startsWith('http')) shell.openExternal(url);
-      return { action: 'deny' };
-    });
+  ipcMain.handle('focus-app', () => {
+    if (mainWindow?.isMinimized()) mainWindow.restore();
+    mainWindow?.show();
+    mainWindow?.focus();
   });
 
+  app.on('web-contents-created', (_e, contents) => secureContents(contents));
+
+  app.setAboutPanelOptions({
+    applicationName: 'MultiTwitch',
+    applicationVersion: app.getVersion(),
+    credits: 'Mehrere Twitch-Streams gleichzeitig – mit deinem eigenen Login.',
+    website: `https://github.com/${pkg.multitwitch.updateRepo}`,
+  });
+  buildMenu();
   createMainWindow();
 
   app.on('activate', () => {
