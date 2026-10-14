@@ -1,7 +1,7 @@
 {
   "name": "multitwitch",
   "productName": "MultiTwitch",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Mehrere Twitch-Streams gleichzeitig schauen – mit deinem eigenen Twitch-Login (Turbo = keine Werbung)",
   "author": "melv1N-ui",
   "main": "src/main.js",

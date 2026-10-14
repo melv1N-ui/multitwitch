@@ -2,6 +2,13 @@
 
 Alle Änderungen an MultiTwitch. Neueste Version oben.
 
+## 1.1.1 – 2026-10-14
+
+### Behoben
+- **Die Twitch-Verbindung (Live-Liste) ging nach ein paar Stunden verloren und musste neu eingerichtet werden.** Ursache: Beim App-Start haben zwei Teile gleichzeitig den abgelaufenen Zugang erneuert – Twitch akzeptiert den Erneuerungsschlüssel aber nur einmal, und die App hat das fälschlich als „abgemeldet“ gewertet. Jetzt wird nur noch einmal erneuert, und zwar schon kurz bevor der Zugang abläuft.
+- Ein kurzer Netzwerkfehler (z. B. WLAN beim Start noch nicht verbunden) meldet dich nicht mehr bei Twitch ab.
+- Die Einstellungsdatei wird so gespeichert, dass sie beim Beenden der App nicht beschädigt werden kann.
+
 ## 1.1.0 – 2026-10-12
 
 ### Neu

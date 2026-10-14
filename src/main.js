@@ -10,7 +10,8 @@ if (process.env.MULTITWITCH_PROFILE) {
 // Streams und Ton-Angleichung dürfen ohne vorherigen Klick abspielen
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-const api = require('./twitch-api');
+const { createTwitchApi } = require('./twitch-api');
+const api = createTwitchApi({ file: path.join(app.getPath('userData'), 'settings.json') });
 const pkg = require('../package.json');
 
 // Alle Streams, der Chat und das Login-Fenster teilen sich diese Session.
